@@ -32,8 +32,17 @@ def test_users_are_isolated_and_history_is_persisted(tmp_path, monkeypatch) -> N
 
     try:
         with TestClient(app) as client:
-            first = client.post("/users", json={"display_name": "Первый"}).json()
-            second = client.post("/users", json={"display_name": "Второй"}).json()
+            first = client.post(
+                "/users",
+                json={"display_name": "Первый", "username": "first", "password": "password1"},
+            ).json()
+            second = client.post(
+                "/users",
+                json={"display_name": "Второй", "username": "second", "password": "password2"},
+            ).json()
+            login = client.post("/login", json={"username": "first", "password": "password1"})
+            assert login.status_code == 200
+            first["api_token"] = login.json()["api_token"]
             created = client.post(
                 "/conversations",
                 headers=_auth(first["api_token"]),
@@ -89,7 +98,10 @@ def test_conversation_message_can_disable_rag(tmp_path, monkeypatch) -> None:
 
     try:
         with TestClient(app) as client:
-            user = client.post("/users", json={"display_name": "Пользователь"}).json()
+            user = client.post(
+                "/users",
+                json={"display_name": "Пользователь", "username": "person", "password": "password1"},
+            ).json()
             created = client.post(
                 "/conversations",
                 headers=_auth(user["api_token"]),

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Generator
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event, text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
@@ -26,6 +26,8 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     display_name: Mapped[str] = mapped_column(String(120))
+    username: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     conversations: Mapped[list["Conversation"]] = relationship(
@@ -108,7 +110,23 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    Base.metadata.create_all(get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    _migrate_users_table(engine)
+
+
+def _migrate_users_table(engine: Engine) -> None:
+    existing_columns = {column["name"] for column in inspect(engine).get_columns("users")}
+    statements: list[str] = []
+    if "username" not in existing_columns:
+        statements.append("ALTER TABLE users ADD COLUMN username VARCHAR(120)")
+    if "password_hash" not in existing_columns:
+        statements.append("ALTER TABLE users ADD COLUMN password_hash VARCHAR(256)")
+    if not statements:
+        return
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
 
 
 def database_health() -> dict[str, Any]:

@@ -12,7 +12,7 @@ CSS = """
 .gradio-container { max-width: 1500px !important; }
 #app-title h1 { font-size: 1.55rem; margin: 0; letter-spacing: 0; }
 #app-title p { color: var(--body-text-color-subdued); margin-top: .25rem; }
-#chat { min-height: 520px; }
+#chat { min-height: 680px; }
 #status { min-height: 1.5rem; }
 """
 
@@ -63,6 +63,74 @@ def _sources_view(sources: list[dict[str, Any]] | None) -> tuple[list[list[Any]]
     return rows, case_choices
 
 
+def _confidence_percent(confidence: str) -> str:
+    value = {"высокая": 85, "средняя": 60, "низкая": 35}.get((confidence or "").lower(), 50)
+    return f"{value}%"
+
+
+def _analysis_views(payload: dict[str, Any] | None) -> tuple[str, list[list[Any]], list[list[Any]], list[list[Any]], list[tuple[str, str]]]:
+    if not payload:
+        return "", [], [], [], []
+    facts = payload.get("facts") or {}
+    roles = facts.get("roles") or []
+    forms = facts.get("forms") or []
+    articles = facts.get("articles_to_check") or []
+    mitigating = facts.get("mitigating") or []
+    aggravating = facts.get("aggravating") or []
+    punishments = facts.get("punishments") or []
+    ml_role = payload.get("ml_role_model") or {}
+
+    role_rows = [
+        [
+            item.get("label", ""),
+            item.get("confidence", ""),
+            _confidence_percent(item.get("confidence", "")),
+            item.get("evidence", ""),
+        ]
+        for item in roles
+    ]
+    if ml_role.get("available") and ml_role.get("predicted_role"):
+        role_rows.insert(0, [ml_role["predicted_role"], "модель", "не рассчитан", "Прогноз ML-классификатора роли."])
+
+    similar_rows: list[list[Any]] = []
+    case_choices: list[tuple[str, str]] = []
+    for item in payload.get("similar_cases") or []:
+        score = f"{float(item.get('score', 0.0)):.1%}"
+        case_number = item.get("case_number", "")
+        similar_rows.append(
+            [
+                case_number,
+                score,
+                item.get("role_label", item.get("role", "")),
+                item.get("punishment_label", item.get("punishment_type", "")),
+                item.get("fragment", ""),
+            ]
+        )
+        if case_number:
+            case_choices.append((f"{case_number} · {score}", case_number))
+
+    legal_rows = [
+        [item.get("source", ""), f"{float(item.get('score', 0.0)):.1%}", item.get("text", "")]
+        for item in payload.get("legal_sources") or []
+    ]
+
+    primary_role = roles[0]["label"] if roles else ml_role.get("predicted_role", "не определена")
+    summary_lines = [
+        f"Предварительная оценка основной роли: **{primary_role}**.",
+        f"Роли: {', '.join(f'{item.get('label', '')} ({_confidence_percent(item.get('confidence', ''))})' for item in roles) or 'не найдены'}.",
+        f"Форма соучастия: {', '.join(item.get('label', '') for item in forms) or 'не найдена'}.",
+        f"Нормы для проверки: {', '.join(articles) or 'не найдены'}.",
+        f"Смягчающие обстоятельства: {', '.join(item.get('label', '') for item in mitigating) or 'не найдены'}.",
+        f"Отягчающие обстоятельства: {', '.join(item.get('label', '') for item in aggravating) or 'не найдены'}.",
+        f"Признаки наказания: {', '.join(item.get('label', '') for item in punishments) or 'не найдены'}.",
+        f"Похожие дела: {len(similar_rows)}.",
+        f"Правовые материалы: {len(legal_rows)}.",
+        "",
+        "Это аналитическая подсказка: окончательная квалификация и назначение наказания остаются за специалистом.",
+    ]
+    return "\n".join(summary_lines), role_rows, similar_rows, legal_rows, case_choices
+
+
 def _chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
     return [
         {"role": item["role"], "content": item["content"]}
@@ -73,7 +141,7 @@ def _chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
 
 def restore_session(token: str) -> tuple[str, str, Any]:
     if not token:
-        return "", "Создайте профиль или введите ключ доступа.", gr.update(choices=[], value=None)
+        return "", "Создайте профиль или войдите по логину и паролю.", gr.update(choices=[], value=None)
     try:
         user = _request("GET", "/me", token)
         choices = _conversation_choices(token)
@@ -82,24 +150,33 @@ def restore_session(token: str) -> tuple[str, str, Any]:
     return token, f"Пользователь: **{user['display_name']}**", gr.update(choices=choices, value=None)
 
 
-def register_user(display_name: str) -> tuple[str, str, str, Any]:
+def register_user(display_name: str, username: str, password: str) -> tuple[str, str, Any]:
     if not display_name.strip():
         raise gr.Error("Введите имя пользователя.")
+    if not username.strip():
+        raise gr.Error("Введите логин.")
+    if len(password) < 6:
+        raise gr.Error("Пароль должен быть не короче 6 символов.")
     headers = {}
     if settings.registration_secret:
         headers["X-Registration-Secret"] = settings.registration_secret
-    payload = _request("POST", "/users", json={"display_name": display_name.strip()}, headers=headers)
+    payload = _request(
+        "POST",
+        "/users",
+        json={"display_name": display_name.strip(), "username": username.strip(), "password": password},
+        headers=headers,
+    )
     token = payload["api_token"]
-    return token, token, f"Профиль **{payload['display_name']}** создан. Ключ сохранён в этом браузере.", gr.update(choices=[], value=None)
+    return token, f"Профиль **{payload['display_name']}** создан. Вход сохранён в этом браузере.", gr.update(choices=[], value=None)
 
 
-def login_user(token: str) -> tuple[str, str, Any]:
-    token = token.strip()
-    if not token:
-        raise gr.Error("Введите ключ доступа.")
-    user = _request("GET", "/me", token)
+def login_user(username: str, password: str) -> tuple[str, str, Any]:
+    if not username.strip() or not password:
+        raise gr.Error("Введите логин и пароль.")
+    payload = _request("POST", "/login", json={"username": username.strip(), "password": password})
+    token = payload["api_token"]
     choices = _conversation_choices(token)
-    return token, f"Пользователь: **{user['display_name']}**", gr.update(choices=choices, value=None)
+    return token, f"Пользователь: **{payload['display_name']}**", gr.update(choices=choices, value=None)
 
 
 def create_conversation(
@@ -107,7 +184,7 @@ def create_conversation(
     title: str,
     case_text: str,
     rag_profile: str,
-) -> tuple[str, Any, list[Any], list[Any], Any, str, str]:
+) -> tuple[str, Any, list[Any], str, list[list[Any]], list[list[Any]], list[list[Any]], list[Any], Any, str, str]:
     if not token:
         raise gr.Error("Сначала войдите в профиль.")
     if not case_text.strip():
@@ -118,13 +195,19 @@ def create_conversation(
         token,
         json={"title": title.strip() or None, "case_text": case_text, "rag_profile": rag_profile},
     )
+    analysis = _request("POST", "/analyze", json={"text": case_text, "legal_top_k": 5, "case_top_k": 5})
+    summary, role_rows, similar_rows, legal_rows, case_choices = _analysis_views(analysis)
     choices = _conversation_choices(token)
     return (
         payload["id"],
         gr.update(choices=choices, value=payload["id"]),
         [],
+        summary,
+        role_rows,
+        similar_rows,
+        legal_rows,
         [],
-        gr.update(choices=[], value=None),
+        gr.update(choices=case_choices, value=None),
         "",
         "Диалог создан. Задайте вопрос по материалам дела.",
     )
@@ -133,28 +216,35 @@ def create_conversation(
 def open_conversation(
     token: str,
     conversation_id: str,
-) -> tuple[str, str, str, str, list[dict[str, str]], list[list[Any]], Any, str, str]:
+) -> tuple[str, str, str, str, list[dict[str, str]], str, list[list[Any]], list[list[Any]], list[list[Any]], list[list[Any]], Any, str, str]:
     if not token or not conversation_id:
         raise gr.Error("Выберите диалог.")
     payload = _request("GET", f"/conversations/{conversation_id}", token)
     assistant_messages = [item for item in payload["messages"] if item.get("role") == "assistant"]
     latest_sources = assistant_messages[-1].get("sources") if assistant_messages else []
     rows, case_choices = _sources_view(latest_sources)
+    analysis = _request("POST", "/analyze", json={"text": payload["case_text"], "legal_top_k": 5, "case_top_k": 5})
+    summary, role_rows, similar_rows, legal_rows, analysis_case_choices = _analysis_views(analysis)
+    merged_case_choices = analysis_case_choices or case_choices
     return (
         payload["id"],
         payload["title"],
         payload["case_text"],
         payload["rag_profile"],
         _chat_messages(payload["messages"]),
+        summary,
+        role_rows,
+        similar_rows,
+        legal_rows,
         rows,
-        gr.update(choices=case_choices, value=None),
+        gr.update(choices=merged_case_choices, value=None),
         "",
         f"Открыт диалог «{payload['title']}».",
     )
 
 
-def new_conversation_form() -> tuple[str, Any, str, str, str, list[Any], list[Any], Any, str, str]:
-    return "", gr.update(value=None), "", "", "balanced", [], [], gr.update(choices=[], value=None), "", "Введите материалы нового дела."
+def new_conversation_form() -> tuple[str, Any, str, str, str, list[Any], str, list[Any], list[Any], list[Any], list[Any], Any, str, str]:
+    return "", gr.update(value=None), "", "", "balanced", [], "", [], [], [], [], gr.update(choices=[], value=None), "", "Введите материалы нового дела."
 
 
 def send_message(
@@ -211,12 +301,12 @@ def open_full_case(case_number: str) -> str:
     return f"{heading}\n\n{payload.get('text', '')}".strip()
 
 
-def delete_conversation(token: str, conversation_id: str) -> tuple[str, Any, list[Any], list[Any], Any, str, str]:
+def delete_conversation(token: str, conversation_id: str) -> tuple[str, Any, list[Any], str, list[Any], list[Any], list[Any], list[Any], Any, str, str]:
     if not token or not conversation_id:
         raise gr.Error("Выберите диалог.")
     _request("DELETE", f"/conversations/{conversation_id}", token)
     choices = _conversation_choices(token)
-    return "", gr.update(choices=choices, value=None), [], [], gr.update(choices=[], value=None), "", "Диалог удалён."
+    return "", gr.update(choices=choices, value=None), [], "", [], [], [], [], gr.update(choices=[], value=None), "", "Диалог удалён."
 
 
 def create_demo() -> gr.Blocks:
@@ -233,10 +323,11 @@ def create_demo() -> gr.Blocks:
             with gr.Column(scale=1, min_width=300):
                 with gr.Accordion("Профиль", open=True):
                     profile_name = gr.Textbox(label="Имя", placeholder="Введите имя")
+                    username = gr.Textbox(label="Логин", placeholder="Придумайте логин")
+                    password = gr.Textbox(label="Пароль", type="password", placeholder="Придумайте пароль")
                     register_btn = gr.Button("Создать профиль", variant="primary")
-                    access_token = gr.Textbox(label="Ключ доступа", type="password")
                     login_btn = gr.Button("Войти")
-                    profile_status = gr.Markdown("Создайте профиль или введите ключ доступа.")
+                    profile_status = gr.Markdown("Создайте профиль или войдите по логину и паролю.")
 
                 conversation_select = gr.Dropdown(label="Диалоги", choices=[], interactive=True)
                 with gr.Row():
@@ -278,6 +369,35 @@ def create_demo() -> gr.Blocks:
                 status = gr.Markdown("", elem_id="status")
 
                 with gr.Tabs():
+                    with gr.Tab("Сводка"):
+                        analysis_summary = gr.Markdown("")
+                    with gr.Tab("Роли"):
+                        role_table = gr.Dataframe(
+                            headers=["Роль", "Уверенность", "%", "Основание"],
+                            datatype=["str", "str", "str", "str"],
+                            value=[],
+                            interactive=False,
+                            wrap=True,
+                            max_height=320,
+                        )
+                    with gr.Tab("Похожие дела"):
+                        similar_cases = gr.Dataframe(
+                            headers=["Дело", "Сходство", "Роль", "Наказание", "Фрагмент"],
+                            datatype=["str", "str", "str", "str", "str"],
+                            value=[],
+                            interactive=False,
+                            wrap=True,
+                            max_height=360,
+                        )
+                    with gr.Tab("Правовые основания"):
+                        legal_sources = gr.Dataframe(
+                            headers=["Источник", "Сходство", "Фрагмент"],
+                            datatype=["str", "str", "str"],
+                            value=[],
+                            interactive=False,
+                            wrap=True,
+                            max_height=360,
+                        )
                     with gr.Tab("Источники ответа"):
                         sources = gr.Dataframe(
                             headers=["Ссылка", "Тип", "Источник", "Сведения", "Сходство"],
@@ -295,16 +415,16 @@ def create_demo() -> gr.Blocks:
         demo.load(
             restore_session,
             inputs=[browser_token],
-            outputs=[access_token, profile_status, conversation_select],
+            outputs=[browser_token, profile_status, conversation_select],
         )
         register_btn.click(
             register_user,
-            inputs=[profile_name],
-            outputs=[browser_token, access_token, profile_status, conversation_select],
+            inputs=[profile_name, username, password],
+            outputs=[browser_token, profile_status, conversation_select],
         )
         login_btn.click(
             login_user,
-            inputs=[access_token],
+            inputs=[username, password],
             outputs=[browser_token, profile_status, conversation_select],
         )
         new_btn.click(
@@ -316,6 +436,10 @@ def create_demo() -> gr.Blocks:
                 case_text,
                 rag_profile,
                 chat,
+                analysis_summary,
+                role_table,
+                similar_cases,
+                legal_sources,
                 sources,
                 case_source,
                 full_case,
@@ -325,7 +449,19 @@ def create_demo() -> gr.Blocks:
         create_btn.click(
             create_conversation,
             inputs=[browser_token, case_title, case_text, rag_profile],
-            outputs=[current_conversation, conversation_select, chat, sources, case_source, full_case, status],
+            outputs=[
+                current_conversation,
+                conversation_select,
+                chat,
+                analysis_summary,
+                role_table,
+                similar_cases,
+                legal_sources,
+                sources,
+                case_source,
+                full_case,
+                status,
+            ],
         )
         open_btn.click(
             open_conversation,
@@ -336,6 +472,10 @@ def create_demo() -> gr.Blocks:
                 case_text,
                 rag_profile,
                 chat,
+                analysis_summary,
+                role_table,
+                similar_cases,
+                legal_sources,
                 sources,
                 case_source,
                 full_case,
@@ -355,7 +495,19 @@ def create_demo() -> gr.Blocks:
         delete_btn.click(
             delete_conversation,
             inputs=[browser_token, current_conversation],
-            outputs=[current_conversation, conversation_select, chat, sources, case_source, full_case, status],
+            outputs=[
+                current_conversation,
+                conversation_select,
+                chat,
+                analysis_summary,
+                role_table,
+                similar_cases,
+                legal_sources,
+                sources,
+                case_source,
+                full_case,
+                status,
+            ],
         )
         open_case_btn.click(open_full_case, inputs=[case_source], outputs=[full_case])
     return demo

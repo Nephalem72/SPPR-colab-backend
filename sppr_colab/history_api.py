@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
-from .auth import AuthenticatedUser, create_api_token, get_current_user
+from .auth import AuthenticatedUser, create_api_token, get_current_user, hash_password, verify_password
 from .config import settings
 from .database import Conversation, Message, User, get_db, utc_now
-from .schemas import ConversationCreate, ConversationMessageRequest, UserCreate
+from .schemas import ConversationCreate, ConversationMessageRequest, LoginRequest, UserCreate
 from .service import answer_chat
 
 
@@ -59,8 +59,16 @@ def register_user(
         settings.registration_secret,
     ):
         raise HTTPException(status_code=403, detail="Недействительный ключ регистрации")
+    username = request.username.strip().lower()
+    if db.scalar(select(User).where(User.username == username)) is not None:
+        raise HTTPException(status_code=409, detail="Логин уже занят")
     api_token, token_hash = create_api_token()
-    user = User(display_name=request.display_name.strip(), token_hash=token_hash)
+    user = User(
+        display_name=request.display_name.strip(),
+        username=username,
+        password_hash=hash_password(request.password),
+        token_hash=token_hash,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -70,6 +78,23 @@ def register_user(
         "api_token": api_token,
         "created_at": _iso(user.created_at),
         "token_notice": "Сохраните токен: повторно он не показывается.",
+    }
+
+
+@router.post("/login")
+def login(request: LoginRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    username = request.username.strip().lower()
+    user = db.scalar(select(User).where(User.username == username))
+    if user is None or not verify_password(request.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    api_token, token_hash = create_api_token()
+    user.token_hash = token_hash
+    db.commit()
+    return {
+        "id": user.id,
+        "display_name": user.display_name,
+        "api_token": api_token,
+        "created_at": _iso(user.created_at),
     }
 
 
