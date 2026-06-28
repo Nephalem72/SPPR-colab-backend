@@ -89,8 +89,6 @@ def _analysis_views(payload: dict[str, Any] | None) -> tuple[str, list[list[Any]
         ]
         for item in roles
     ]
-    if ml_role.get("available") and ml_role.get("predicted_role"):
-        role_rows.insert(0, [ml_role["predicted_role"], "модель", "не рассчитан", "Прогноз ML-классификатора роли."])
 
     similar_rows: list[list[Any]] = []
     case_choices: list[tuple[str, str]] = []
@@ -115,8 +113,10 @@ def _analysis_views(payload: dict[str, Any] | None) -> tuple[str, list[list[Any]
     ]
 
     primary_role = roles[0]["label"] if roles else ml_role.get("predicted_role", "не определена")
+    ml_role_line = f"ML-прогноз роли: {ml_role['predicted_role']}." if ml_role.get("available") and ml_role.get("predicted_role") else ""
     summary_lines = [
         f"Предварительная оценка основной роли: **{primary_role}**.",
+        ml_role_line,
         f"Роли: {', '.join(f'{item.get('label', '')} ({_confidence_percent(item.get('confidence', ''))})' for item in roles) or 'не найдены'}.",
         f"Форма соучастия: {', '.join(item.get('label', '') for item in forms) or 'не найдена'}.",
         f"Нормы для проверки: {', '.join(articles) or 'не найдены'}.",
@@ -128,7 +128,7 @@ def _analysis_views(payload: dict[str, Any] | None) -> tuple[str, list[list[Any]
         "",
         "Это аналитическая подсказка: окончательная квалификация и назначение наказания остаются за специалистом.",
     ]
-    return "\n".join(summary_lines), role_rows, similar_rows, legal_rows, case_choices
+    return "\n".join(line for line in summary_lines if line), role_rows, similar_rows, legal_rows, case_choices
 
 
 def _chat_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
