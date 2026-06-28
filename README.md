@@ -5,7 +5,7 @@
 Ожидаемая структура Google Drive:
 
 ```text
-MyDrive/
+/content/drive/MyDrive/
   SPPR/
     data/
       laws.parquet
@@ -25,7 +25,7 @@ MyDrive/
 from google.colab import drive
 drive.mount("/content/drive")
 %cd /content
-!git clone <YOUR_REPO_URL> SPPR-colab-backend
+!git clone https://github.com/Nephalem72/SPPR-colab-backend.git
 %cd /content/SPPR-colab-backend
 !pip install -r requirements.txt
 !python app_fastapi.py
@@ -43,12 +43,75 @@ drive.mount("/content/drive")
 - `SPPR_DATA_DIR` — папка с parquet/моделями, по умолчанию `${SPPR_DRIVE_ROOT}/data`
 - `SPPR_HOST` — host FastAPI, по умолчанию `0.0.0.0`
 - `SPPR_PORT` — порт FastAPI, по умолчанию `8000`
+- `SPPR_LLM_MODEL_ID` — Hugging Face ID модели; это основной переключатель модели
+- `SPPR_LLM_BACKEND` — backend генерации, сейчас `transformers`
+- `SPPR_LLM_LOAD_IN_4BIT` — `true` для 4-bit загрузки на GPU Colab
+- `SPPR_LLM_MAX_INPUT_TOKENS` — предел входного контекста, по умолчанию `6144`
+- `SPPR_LLM_MAX_NEW_TOKENS` — предел ответа, по умолчанию `320`
+- `SPPR_RAG_PROFILE` — `fast`, `balanced` или `broad`
+
+Пример настройки эксперимента до импорта backend:
+
+```python
+import os
+
+os.environ["SPPR_LLM_MODEL_ID"] = "Vikhrmodels/Vikhr-Qwen-2.5-1.5B-Instruct"
+os.environ["SPPR_LLM_LOAD_IN_4BIT"] = "true"
+os.environ["SPPR_RAG_PROFILE"] = "balanced"
+```
+
+Для замены модели достаточно поменять `SPPR_LLM_MODEL_ID` и перезапустить runtime/server. Индексы, RAG и API при этом не меняются. Профили позволяют отдельно сравнивать скорость и полноту retrieval.
 
 Эндпоинты:
 
 - `GET /health`
 - `GET /warmup`
+- `GET /config`
 - `POST /analyze`
 - `POST /similar_cases`
+- `GET /case?case_number=...` — полный текст найденного дела
 - `POST /chat_context`
 - `POST /chat`
+
+`POST /chat` возвращает ответ, список использованных источников и метрики `retrieval_seconds`, `generation_seconds`, `total_seconds`, `input_tokens`, `output_tokens`. История диалога передаётся полем `history`, а полный собранный контекст можно включить через `return_context: true`.
+
+Повторяемый прогон одной модели на фиксированных запросах:
+
+```bash
+python scripts/benchmark_api.py --profile balanced
+```
+
+Отчёт сохраняется в `eval/results/<model>__<profile>.json`. Для сравнения меняется `SPPR_LLM_MODEL_ID`, сервер перезапускается и запускается тот же benchmark. Помимо времени сохраняются ответы, источники и проверка вымышленных идентификаторов ссылок.
+
+Пример запроса:
+
+```json
+{
+  "text": "Описание обстоятельств дела...",
+  "question": "Как может быть квалифицирована роль лица?",
+  "history": [],
+  "rag_profile": "balanced",
+  "return_context": false
+}
+```
+
+Проверка наличия файлов в Colab:
+
+```python
+from pathlib import Path
+
+data_dir = Path("/content/drive/MyDrive/SPPR/data")
+required = [
+    "laws.parquet",
+    "final_roles_punishments_v3.parquet",
+    "cases_with_id.parquet",
+    "role_model.pkl",
+    "vectorizer.pkl",
+    "embeddings.pkl",
+    "faiss_index.bin",
+]
+
+for name in required:
+    path = data_dir / name
+    print(name, path.exists(), path.stat().st_size if path.exists() else "MISSING")
+```

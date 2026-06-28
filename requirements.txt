@@ -1,5 +1,7 @@
 torch
 transformers
+accelerate
+bitsandbytes
 fastapi
 uvicorn[standard]
 pandas
@@ -11,3 +13,4 @@ sentence-transformers
 faiss-cpu
 pydantic
 python-multipart
+requests
