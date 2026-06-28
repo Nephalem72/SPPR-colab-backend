@@ -12,7 +12,7 @@ CSS = """
 .gradio-container { max-width: 1500px !important; }
 #app-title h1 { font-size: 1.55rem; margin: 0; letter-spacing: 0; }
 #app-title p { color: var(--body-text-color-subdued); margin-top: .25rem; }
-#chat { min-height: 680px; }
+#chat { min-height: 760px; }
 #status { min-height: 1.5rem; }
 """
 
@@ -281,12 +281,16 @@ def send_message(
         status = (
             f"RAG включён. Готово за {float(metrics.get('total_seconds', 0.0)):.1f} сек. "
             f"Поиск: {float(metrics.get('retrieval_seconds', 0.0)):.1f} сек., "
-            f"ответ: {float(metrics.get('generation_seconds', 0.0)):.1f} сек."
+            f"ответ: {float(metrics.get('generation_seconds', 0.0)):.1f} сек. "
+            f"Токенов ответа: {int(metrics.get('output_tokens', 0))}, "
+            f"продолжений: {int(metrics.get('continuations_used', 0))}."
         )
     else:
         status = (
             f"RAG выключен. Готово за {float(metrics.get('total_seconds', 0.0)):.1f} сек. "
-            f"Ответ: {float(metrics.get('generation_seconds', 0.0)):.1f} сек."
+            f"Ответ: {float(metrics.get('generation_seconds', 0.0)):.1f} сек. "
+            f"Токенов ответа: {int(metrics.get('output_tokens', 0))}, "
+            f"продолжений: {int(metrics.get('continuations_used', 0))}."
         )
     return updated_chat, "", rows, gr.update(choices=case_choices, value=None), status, gr.update()
 
@@ -353,7 +357,7 @@ def create_demo() -> gr.Blocks:
                 chat = gr.Chatbot(
                     label="Диалог",
                     layout="panel",
-                    height=540,
+                    height=760,
                     placeholder="Выберите диалог или создайте новый.",
                     elem_id="chat",
                 )

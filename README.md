@@ -62,6 +62,7 @@ print("FastAPI PID:", api_process.pid)
 - `SPPR_LLM_LOAD_IN_4BIT` — `true` для 4-bit загрузки на GPU Colab
 - `SPPR_LLM_MAX_INPUT_TOKENS` — предел входного контекста, по умолчанию `6144`
 - `SPPR_LLM_MAX_NEW_TOKENS` — предел ответа, по умолчанию `768`
+- `SPPR_LLM_MAX_CONTINUATIONS` — сколько раз автоматически продолжать ответ при упоре в лимит, по умолчанию `2`
 - `SPPR_RAG_PROFILE` — `fast`, `balanced` или `broad`
 - `SPPR_DATABASE_URL` — подключение к БД; по умолчанию SQLite в `/content/drive/MyDrive/SPPR/data/sppr_history.db`
 - `SPPR_ALLOW_USER_REGISTRATION` — разрешить создание пользователей через API, по умолчанию `true`
@@ -78,6 +79,7 @@ import os
 
 os.environ["SPPR_LLM_MODEL_ID"] = "Qwen/Qwen2.5-14B-Instruct"
 os.environ["SPPR_LLM_LOAD_IN_4BIT"] = "true"
+os.environ["SPPR_LLM_MAX_CONTINUATIONS"] = "2"
 os.environ["SPPR_RAG_PROFILE"] = "balanced"
 os.environ["SPPR_DATABASE_URL"] = "sqlite:////content/drive/MyDrive/SPPR/data/sppr_history.db"
 ```

@@ -80,7 +80,7 @@ class TransformersBackend:
         self.model.eval()
         self._generation_lock = Lock()
 
-    def generate(self, messages: list[dict[str, str]]) -> tuple[str, dict[str, Any]]:
+    def _generate_once(self, messages: list[dict[str, str]]) -> tuple[str, dict[str, Any], bool]:
         prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tokenizer(
             prompt,
@@ -105,10 +105,54 @@ class TransformersBackend:
         elapsed = perf_counter() - started
         answer_tokens = generated[0][inputs["input_ids"].shape[1] :]
         answer = self.tokenizer.decode(answer_tokens, skip_special_tokens=True).strip()
+        eos_token_id = self.tokenizer.eos_token_id
+        hit_token_limit = int(answer_tokens.shape[0]) >= settings.llm_max_new_tokens
+        stopped_by_eos = eos_token_id is not None and bool((answer_tokens == eos_token_id).any().item())
+        should_continue = hit_token_limit and not stopped_by_eos
         return answer, {
             "generation_seconds": round(elapsed, 3),
             "input_tokens": int(inputs["input_ids"].shape[1]),
             "output_tokens": int(answer_tokens.shape[0]),
+        }, should_continue
+
+    def generate(self, messages: list[dict[str, str]]) -> tuple[str, dict[str, Any]]:
+        parts: list[str] = []
+        total_generation_seconds = 0.0
+        total_output_tokens = 0
+        input_tokens = 0
+        continuations_used = 0
+        current_messages = list(messages)
+
+        for attempt in range(settings.llm_max_continuations + 1):
+            answer, metrics, should_continue = self._generate_once(current_messages)
+            if answer:
+                parts.append(answer)
+            total_generation_seconds += float(metrics["generation_seconds"])
+            total_output_tokens += int(metrics["output_tokens"])
+            input_tokens = int(metrics["input_tokens"])
+            if not should_continue or attempt >= settings.llm_max_continuations:
+                break
+
+            continuations_used += 1
+            current_messages = [
+                *messages,
+                {"role": "assistant", "content": "\n\n".join(parts)},
+                {
+                    "role": "user",
+                    "content": (
+                        "Продолжи предыдущий ответ ровно с места остановки. "
+                        "Не повторяй уже написанное, не начинай заново, сохрани структуру и ссылки на источники."
+                    ),
+                },
+            ]
+
+        return "\n\n".join(parts).strip(), {
+            "generation_seconds": round(total_generation_seconds, 3),
+            "input_tokens": input_tokens,
+            "output_tokens": total_output_tokens,
+            "continuations_used": continuations_used,
+            "max_new_tokens": settings.llm_max_new_tokens,
+            "max_continuations": settings.llm_max_continuations,
         }
 
 
