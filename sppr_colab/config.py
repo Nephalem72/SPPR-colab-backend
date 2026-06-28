@@ -19,7 +19,7 @@ class Settings:
         "SPPR_LEGACY_CASE_ENCODER",
         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
     )
-    llm_model_id: str = os.getenv("SPPR_LLM_MODEL_ID", "Vikhrmodels/Vikhr-Qwen-2.5-1.5B-Instruct")
+    llm_model_id: str = os.getenv("SPPR_LLM_MODEL_ID", "Qwen/Qwen2.5-14B-Instruct")
     llm_backend: str = os.getenv("SPPR_LLM_BACKEND", "transformers")
     llm_max_new_tokens: int = int(os.getenv("SPPR_LLM_MAX_NEW_TOKENS", "768"))
     llm_max_input_tokens: int = int(os.getenv("SPPR_LLM_MAX_INPUT_TOKENS", "6144"))
