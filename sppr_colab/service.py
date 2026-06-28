@@ -4,7 +4,7 @@ from time import perf_counter
 from typing import Any
 
 from .extraction import extract_case_facts, normalize_text
-from .llm import generate_chat_answer
+from .llm import generate_chat_answer, generate_plain_chat_answer
 from .models import predict_role_ml
 from .rag import build_grounded_context, get_rag_profile
 from .retrieval import fetch_full_cases, health_status, search_laws, search_similar_cases, warmup
@@ -59,12 +59,27 @@ def answer_chat(
     text: str,
     question: str,
     history: list[dict[str, str]] | None = None,
+    use_rag: bool = True,
     rag_profile: str = "balanced",
     legal_top_k: int | None = None,
     case_top_k: int | None = None,
     return_context: bool = False,
 ) -> dict[str, Any]:
     started = perf_counter()
+    if not use_rag:
+        response = generate_plain_chat_answer(text, question, history=history)
+        total_seconds = perf_counter() - started
+        response["metrics"].update(
+            retrieval_seconds=0.0,
+            total_seconds=round(total_seconds, 3),
+            rag_enabled=False,
+            rag_profile=None,
+            legal_sources=0,
+            similar_cases=0,
+        )
+        response["sources"] = []
+        return response
+
     context = build_chat_context(
         text,
         rag_profile=rag_profile,
@@ -77,6 +92,7 @@ def answer_chat(
     response["metrics"].update(
         retrieval_seconds=round(retrieval_seconds, 3),
         total_seconds=round(total_seconds, 3),
+        rag_enabled=True,
         rag_profile=rag_profile,
         legal_sources=len(context["legal_sources"]),
         similar_cases=len(context["similar_cases"]),

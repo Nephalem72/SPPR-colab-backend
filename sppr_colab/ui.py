@@ -161,6 +161,7 @@ def send_message(
     token: str,
     conversation_id: str,
     question: str,
+    use_rag: bool,
     chat: list[dict[str, Any]] | None,
 ) -> tuple[list[dict[str, Any]], str, list[list[Any]], Any, str, Any]:
     if not token:
@@ -173,7 +174,7 @@ def send_message(
         "POST",
         f"/conversations/{conversation_id}/messages",
         token,
-        json={"content": question.strip()},
+        json={"content": question.strip(), "use_rag": use_rag},
         timeout=1200,
     )
     updated_chat = list(chat or [])
@@ -186,11 +187,17 @@ def send_message(
     sources = payload["assistant_message"].get("sources") or []
     rows, case_choices = _sources_view(sources)
     metrics = payload["assistant_message"].get("metrics") or {}
-    status = (
-        f"Готово за {float(metrics.get('total_seconds', 0.0)):.1f} сек. "
-        f"Поиск: {float(metrics.get('retrieval_seconds', 0.0)):.1f} сек., "
-        f"ответ: {float(metrics.get('generation_seconds', 0.0)):.1f} сек."
-    )
+    if metrics.get("rag_enabled"):
+        status = (
+            f"RAG включён. Готово за {float(metrics.get('total_seconds', 0.0)):.1f} сек. "
+            f"Поиск: {float(metrics.get('retrieval_seconds', 0.0)):.1f} сек., "
+            f"ответ: {float(metrics.get('generation_seconds', 0.0)):.1f} сек."
+        )
+    else:
+        status = (
+            f"RAG выключен. Готово за {float(metrics.get('total_seconds', 0.0)):.1f} сек. "
+            f"Ответ: {float(metrics.get('generation_seconds', 0.0)):.1f} сек."
+        )
     return updated_chat, "", rows, gr.update(choices=case_choices, value=None), status, gr.update()
 
 
@@ -267,6 +274,7 @@ def create_demo() -> gr.Blocks:
                         scale=8,
                     )
                     send_btn = gr.Button("Отправить", variant="primary", scale=1)
+                use_rag = gr.Checkbox(label="Использовать базу источников (RAG)", value=True)
                 status = gr.Markdown("", elem_id="status")
 
                 with gr.Tabs():
@@ -336,12 +344,12 @@ def create_demo() -> gr.Blocks:
         )
         send_btn.click(
             send_message,
-            inputs=[browser_token, current_conversation, question, chat],
+            inputs=[browser_token, current_conversation, question, use_rag, chat],
             outputs=[chat, question, sources, case_source, status, conversation_select],
         )
         question.submit(
             send_message,
-            inputs=[browser_token, current_conversation, question, chat],
+            inputs=[browser_token, current_conversation, question, use_rag, chat],
             outputs=[chat, question, sources, case_source, status, conversation_select],
         )
         delete_btn.click(

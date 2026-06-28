@@ -211,6 +211,7 @@ def send_message(
         case_text,
         request.content,
         history=history,
+        use_rag=request.use_rag,
         rag_profile=rag_profile,
         return_context=False,
     )

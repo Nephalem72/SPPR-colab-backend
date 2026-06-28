@@ -22,6 +22,13 @@ SYSTEM_PROMPT = """Ты юридический аналитический асс
 Если оснований недостаточно, прямо укажи, каких данных не хватает.
 Ответ не является юридической консультацией и не заменяет решение специалиста."""
 
+PLAIN_CHAT_PROMPT = """Ты юридический аналитический ассистент российской СППР.
+Отвечай на русском языке и поддерживай профессиональный диалог по материалам дела.
+В этом режиме поиск по базе правовых материалов и похожих судебных дел отключён.
+Не придумывай источники, номера дел, судебную практику и точные нормы, если они не переданы пользователем.
+Если для уверенного вывода нужен поиск по базе, прямо предложи включить режим RAG.
+Ответ не является юридической консультацией и не заменяет решение специалиста."""
+
 
 class LLMBackend(Protocol):
     model_id: str
@@ -153,6 +160,44 @@ def generate_chat_answer(
             "used": sorted(used_citations),
             "invalid": sorted(used_citations - available_citations),
             "has_citations": bool(used_citations),
+        },
+    }
+
+
+def generate_plain_chat_answer(
+    case_text: str,
+    question: str,
+    history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    backend = load_llm()
+    history_messages = (history or [])[-settings.max_history_messages :]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"{PLAIN_CHAT_PROMPT}\n\n"
+                "МАТЕРИАЛЫ ДЕЛА, ДОСТУПНЫЕ ДЛЯ ДИАЛОГА:\n"
+                f"{case_text[:8000]}"
+            ),
+        },
+        *history_messages,
+        {"role": "user", "content": question[:8000]},
+    ]
+    while len(messages) > 2:
+        prompt = backend.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        if len(backend.tokenizer.encode(prompt)) <= settings.llm_max_input_tokens - 256:
+            break
+        del messages[1]
+
+    answer, metrics = backend.generate(messages)
+    return {
+        "model": {"backend": settings.llm_backend, "model_id": backend.model_id},
+        "answer": answer,
+        "metrics": metrics,
+        "citation_check": {
+            "used": [],
+            "invalid": [],
+            "has_citations": False,
         },
     }
 

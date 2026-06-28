@@ -82,6 +82,7 @@ def chat(request: ChatRequest) -> dict:
         request.text,
         request.question,
         history=[item.model_dump() for item in request.history],
+        use_rag=request.use_rag,
         rag_profile=request.rag_profile,
         legal_top_k=request.legal_top_k,
         case_top_k=request.case_top_k,

@@ -37,6 +37,7 @@ class ChatRequest(BaseModel):
     text: str = Field(..., min_length=1)
     question: str = Field(..., min_length=1, max_length=8000)
     history: list[ChatMessage] = Field(default_factory=list)
+    use_rag: bool = True
     rag_profile: RagProfileName = settings.rag_profile
     legal_top_k: int | None = Field(default=None, ge=1, le=20)
     case_top_k: int | None = Field(default=None, ge=1, le=20)
@@ -55,4 +56,5 @@ class ConversationCreate(BaseModel):
 
 class ConversationMessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=8000)
+    use_rag: bool = True
     rag_profile: RagProfileName | None = None
