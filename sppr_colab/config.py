@@ -31,6 +31,13 @@ class Settings:
     database_url: str = os.getenv("SPPR_DATABASE_URL", "")
     allow_user_registration: bool = _env_bool("SPPR_ALLOW_USER_REGISTRATION", True)
     registration_secret: str = os.getenv("SPPR_REGISTRATION_SECRET", "")
+    api_url: str = os.getenv("SPPR_API_URL", "http://127.0.0.1:8000")
+    ui_host: str = os.getenv("SPPR_UI_HOST", "0.0.0.0")
+    ui_port: int = int(os.getenv("SPPR_UI_PORT", "7860"))
+    ui_share: bool = _env_bool("SPPR_UI_SHARE", True)
+    ui_username: str = os.getenv("SPPR_UI_USERNAME", "")
+    ui_password: str = os.getenv("SPPR_UI_PASSWORD", "")
+    ui_browser_secret: str = os.getenv("SPPR_UI_BROWSER_SECRET", "sppr-colab-ui-v1")
 
     @property
     def resolved_database_url(self) -> str:

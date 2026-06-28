@@ -28,8 +28,22 @@ drive.mount("/content/drive")
 !git clone https://github.com/Nephalem72/SPPR-colab-backend.git
 %cd /content/SPPR-colab-backend
 !pip install -r requirements.txt
-!python app_fastapi.py
+
+import subprocess
+import time
+
+api_process = subprocess.Popen(["python", "app_fastapi.py"])
+time.sleep(5)
+print("FastAPI PID:", api_process.pid)
 ```
+
+Пользовательский интерфейс запускается после FastAPI:
+
+```python
+!python app_gradio.py
+```
+
+В Colab Gradio напечатает публичную ссылку вида `https://....gradio.live`. FastAPI остаётся доступен только внутри Colab, а пользователь работает через внешний Gradio UI.
 
 По умолчанию backend ищет данные в:
 
@@ -52,6 +66,10 @@ drive.mount("/content/drive")
 - `SPPR_DATABASE_URL` — подключение к БД; по умолчанию SQLite в `/content/drive/MyDrive/SPPR/data/sppr_history.db`
 - `SPPR_ALLOW_USER_REGISTRATION` — разрешить создание пользователей через API, по умолчанию `true`
 - `SPPR_REGISTRATION_SECRET` — необязательный секрет для `POST /users` в заголовке `X-Registration-Secret`
+- `SPPR_API_URL` — внутренний адрес FastAPI для UI, по умолчанию `http://127.0.0.1:8000`
+- `SPPR_UI_PORT` — порт Gradio, по умолчанию `7860`
+- `SPPR_UI_SHARE` — создавать публичную Gradio-ссылку, по умолчанию `true`
+- `SPPR_UI_USERNAME` и `SPPR_UI_PASSWORD` — необязательная защита внешнего UI паролем
 
 Пример настройки эксперимента до импорта backend:
 
@@ -98,6 +116,8 @@ Authorization: Bearer <api_token>
 Токен генерируется случайно и возвращается только при создании пользователя; в БД хранится SHA-256-хеш. Пользователь видит только свои диалоги. Для одного процесса Colab достаточно SQLite на Google Drive. Для нескольких серверов или постоянной эксплуатации задайте PostgreSQL, например `SPPR_DATABASE_URL=postgresql+psycopg://user:password@host/dbname`.
 
 При публикации FastAPI через tunnel обязательно задайте `SPPR_REGISTRATION_SECRET` либо отключите открытую регистрацию. SQLite на Google Drive рассчитан на один процесс Colab; для реальной многопользовательской эксплуатации нужен PostgreSQL, резервное копирование и полноценная аутентификация. Тексты дел и переписка содержат чувствительные данные, поэтому доступ к Drive/БД должен быть ограничен.
+
+Внешний Gradio UI предоставляет создание/вход в профиль, сохраненный список диалогов, чат, источники ответа и чтение полного текста похожего дела. Ключ пользователя сохраняется в локальном хранилище браузера. Для закрытого теста задайте `SPPR_UI_USERNAME` и `SPPR_UI_PASSWORD` до запуска.
 
 `POST /chat` возвращает ответ, список использованных источников и метрики `retrieval_seconds`, `generation_seconds`, `total_seconds`, `input_tokens`, `output_tokens`. История диалога передаётся полем `history`, а полный собранный контекст можно включить через `return_context: true`.
 
