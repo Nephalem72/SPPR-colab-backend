@@ -28,6 +28,15 @@ class Settings:
     llm_load_in_4bit: bool = _env_bool("SPPR_LLM_LOAD_IN_4BIT", False)
     rag_profile: str = os.getenv("SPPR_RAG_PROFILE", "balanced")
     max_history_messages: int = int(os.getenv("SPPR_MAX_HISTORY_MESSAGES", "8"))
+    database_url: str = os.getenv("SPPR_DATABASE_URL", "")
+    allow_user_registration: bool = _env_bool("SPPR_ALLOW_USER_REGISTRATION", True)
+    registration_secret: str = os.getenv("SPPR_REGISTRATION_SECRET", "")
+
+    @property
+    def resolved_database_url(self) -> str:
+        if self.database_url:
+            return self.database_url
+        return f"sqlite:///{(self.data_dir / 'sppr_history.db').as_posix()}"
 
     @property
     def laws_path(self) -> Path:

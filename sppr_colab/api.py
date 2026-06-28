@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 
 from .schemas import AnalyzeRequest, ChatContextRequest, ChatRequest, SimilarCasesRequest
@@ -8,14 +10,23 @@ from .llm import warmup_llm
 from .rag import RAG_PROFILES, profile_payload
 from .service import analyze_text, answer_chat, build_chat_context, health_status, warmup
 from .retrieval import fetch_full_cases, search_similar_cases
+from .database import database_health, init_db
+from .history_api import router as history_router
 
 
-app = FastAPI(title="SPPR Colab Backend")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="SPPR Colab Backend", lifespan=lifespan)
+app.include_router(history_router)
 
 
 @app.get("/health")
 def health() -> dict:
-    return health_status()
+    return {**health_status(), "database": database_health()}
 
 
 @app.get("/warmup")

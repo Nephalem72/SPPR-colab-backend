@@ -7,6 +7,9 @@ from pydantic import BaseModel, Field
 from .config import settings
 
 
+RagProfileName = Literal["fast", "balanced", "broad"]
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(..., min_length=1, max_length=12000)
@@ -25,7 +28,7 @@ class SimilarCasesRequest(BaseModel):
 
 class ChatContextRequest(BaseModel):
     text: str = Field(..., min_length=1)
-    rag_profile: str = settings.rag_profile
+    rag_profile: RagProfileName = settings.rag_profile
     legal_top_k: int | None = Field(default=None, ge=1, le=20)
     case_top_k: int | None = Field(default=None, ge=1, le=20)
 
@@ -34,7 +37,22 @@ class ChatRequest(BaseModel):
     text: str = Field(..., min_length=1)
     question: str = Field(..., min_length=1, max_length=8000)
     history: list[ChatMessage] = Field(default_factory=list)
-    rag_profile: str = settings.rag_profile
+    rag_profile: RagProfileName = settings.rag_profile
     legal_top_k: int | None = Field(default=None, ge=1, le=20)
     case_top_k: int | None = Field(default=None, ge=1, le=20)
     return_context: bool = False
+
+
+class UserCreate(BaseModel):
+    display_name: str = Field(..., min_length=1, max_length=120)
+
+
+class ConversationCreate(BaseModel):
+    case_text: str = Field(..., min_length=1, max_length=200_000)
+    title: str | None = Field(default=None, max_length=200)
+    rag_profile: RagProfileName = settings.rag_profile
+
+
+class ConversationMessageRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=8000)
+    rag_profile: RagProfileName | None = None

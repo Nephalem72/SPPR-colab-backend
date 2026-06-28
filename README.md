@@ -49,6 +49,9 @@ drive.mount("/content/drive")
 - `SPPR_LLM_MAX_INPUT_TOKENS` — предел входного контекста, по умолчанию `6144`
 - `SPPR_LLM_MAX_NEW_TOKENS` — предел ответа, по умолчанию `320`
 - `SPPR_RAG_PROFILE` — `fast`, `balanced` или `broad`
+- `SPPR_DATABASE_URL` — подключение к БД; по умолчанию SQLite в `/content/drive/MyDrive/SPPR/data/sppr_history.db`
+- `SPPR_ALLOW_USER_REGISTRATION` — разрешить создание пользователей через API, по умолчанию `true`
+- `SPPR_REGISTRATION_SECRET` — необязательный секрет для `POST /users` в заголовке `X-Registration-Secret`
 
 Пример настройки эксперимента до импорта backend:
 
@@ -58,6 +61,7 @@ import os
 os.environ["SPPR_LLM_MODEL_ID"] = "Vikhrmodels/Vikhr-Qwen-2.5-1.5B-Instruct"
 os.environ["SPPR_LLM_LOAD_IN_4BIT"] = "true"
 os.environ["SPPR_RAG_PROFILE"] = "balanced"
+os.environ["SPPR_DATABASE_URL"] = "sqlite:////content/drive/MyDrive/SPPR/data/sppr_history.db"
 ```
 
 Для замены модели достаточно поменять `SPPR_LLM_MODEL_ID` и перезапустить runtime/server. Индексы, RAG и API при этом не меняются. Профили позволяют отдельно сравнивать скорость и полноту retrieval.
@@ -72,6 +76,28 @@ os.environ["SPPR_RAG_PROFILE"] = "balanced"
 - `GET /case?case_number=...` — полный текст найденного дела
 - `POST /chat_context`
 - `POST /chat`
+
+Пользователи и история:
+
+- `POST /users` — создать пользователя и один раз получить API-токен
+- `GET /me` — проверить текущего пользователя
+- `POST /me/token` — заменить API-токен
+- `DELETE /me` — удалить пользователя со всеми диалогами
+- `POST /conversations` — создать диалог с текстом дела
+- `GET /conversations` — список собственных диалогов
+- `GET /conversations/{id}` — переписка и сохраненные источники
+- `POST /conversations/{id}/messages` — вопрос с автоматическим RAG и историей
+- `DELETE /conversations/{id}` — удалить диалог и его сообщения
+
+Защищенные запросы передают заголовок:
+
+```text
+Authorization: Bearer <api_token>
+```
+
+Токен генерируется случайно и возвращается только при создании пользователя; в БД хранится SHA-256-хеш. Пользователь видит только свои диалоги. Для одного процесса Colab достаточно SQLite на Google Drive. Для нескольких серверов или постоянной эксплуатации задайте PostgreSQL, например `SPPR_DATABASE_URL=postgresql+psycopg://user:password@host/dbname`.
+
+При публикации FastAPI через tunnel обязательно задайте `SPPR_REGISTRATION_SECRET` либо отключите открытую регистрацию. SQLite на Google Drive рассчитан на один процесс Colab; для реальной многопользовательской эксплуатации нужен PostgreSQL, резервное копирование и полноценная аутентификация. Тексты дел и переписка содержат чувствительные данные, поэтому доступ к Drive/БД должен быть ограничен.
 
 `POST /chat` возвращает ответ, список использованных источников и метрики `retrieval_seconds`, `generation_seconds`, `total_seconds`, `input_tokens`, `output_tokens`. История диалога передаётся полем `history`, а полный собранный контекст можно включить через `return_context: true`.
 
