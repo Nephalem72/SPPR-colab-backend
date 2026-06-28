@@ -21,7 +21,7 @@ class Settings:
     )
     llm_model_id: str = os.getenv("SPPR_LLM_MODEL_ID", "Vikhrmodels/Vikhr-Qwen-2.5-1.5B-Instruct")
     llm_backend: str = os.getenv("SPPR_LLM_BACKEND", "transformers")
-    llm_max_new_tokens: int = int(os.getenv("SPPR_LLM_MAX_NEW_TOKENS", "320"))
+    llm_max_new_tokens: int = int(os.getenv("SPPR_LLM_MAX_NEW_TOKENS", "768"))
     llm_max_input_tokens: int = int(os.getenv("SPPR_LLM_MAX_INPUT_TOKENS", "6144"))
     llm_temperature: float = float(os.getenv("SPPR_LLM_TEMPERATURE", "0.0"))
     llm_top_p: float = float(os.getenv("SPPR_LLM_TOP_P", "0.9"))
